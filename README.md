@@ -88,3 +88,6 @@ simply expalain
    * Deploy on a free tier (Render, Fly.io) so your professor can click “Try it live.”
 
 
+so to kick start the project:
+first we are writing script in server in order to stabilished the Handshakes proccess so that each user has an identity key.
+next would be session key Shared secret known only to both endpoints.
