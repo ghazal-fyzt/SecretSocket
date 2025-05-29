@@ -1,0 +1,7 @@
+Flask
+flask-socketio
+eventlet
+PyNaCl
+pytest
+pytest-benchmark
+gunicorn
