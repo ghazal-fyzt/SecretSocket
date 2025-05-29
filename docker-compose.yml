@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: ./server
+    image: secretsocket-server
+    ports:
+      - "5000:5000"
+
+  client1:
+    image: python:3.11-slim
+    depends_on:
+      - server
+    working_dir: /app
+    volumes:
+      - ./client:/app
+    command: >
+      sh -c "pip install pynacl flask-socketio eventlet &&
+             python app.py http://server:5000"
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  client2:
+    image: python:3.11-slim
+    depends_on:
+      - server
+    working_dir: /app
+    volumes:
+      - ./client:/app
+    command: >
+      sh -c "pip install pynacl flask-socketio eventlet &&
+             python app.py http://server:5000"
+    environment:
+      - PYTHONUNBUFFERED=1
