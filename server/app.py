@@ -1,5 +1,5 @@
 """
-Minimal Flask-SocketIO server for SecretSocket.
+Flask-SocketIO server for SecretSocket.
 Relays handshake and chat messages between connected clients.
 Does NOT decrypt or inspect message contents—acts as an honest-but-curious relay.
 """
@@ -7,10 +7,16 @@ Does NOT decrypt or inspect message contents—acts as an honest-but-curious rel
 from flask import Flask, request
 from flask_socketio import SocketIO, emit
 
-# Initialize Flask app and Socket.IO
+# Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'replace-with-a-secure-random-key'
-# Allow all origins for simplicity; restrict in production!
+
+# Healthcheck route to verify server is running
+@app.route('/')
+def index():
+    return "🔒 SecretSocket server is running!"
+
+# Initialize Socket.IO with CORS allowed for all origins (development only)
 socketio = SocketIO(app, cors_allowed_origins='*')
 
 @socketio.on('connect')
@@ -35,8 +41,8 @@ def handle_handshake(data):
     Receives an ephemeral public key from one client and forwards it to all other clients.
     data: { 'public_key': <hex-string> }
     """
-    print(f"[*] Handshake from {request.sid}: {data['public_key']}")
-    # Broadcast to others (exclude the sender)
+    print(f"[*] Handshake from {request.sid}: {data.get('public_key')}")
+    # Relay to all other clients
     emit('handshake', data, broadcast=True, include_self=False)
 
 @socketio.on('msg')
@@ -45,10 +51,10 @@ def handle_message(data):
     Receives an encrypted chat message and relays it to other clients.
     data: { 'body': <ciphertext-hex> }
     """
-    print(f"[*] Message from {request.sid}: {data['body'][:16]}... (truncated)")
-    # Broadcast to others (exclude the sender)
+    print(f"[*] Message from {request.sid}: {str(data.get('body'))[:16]}... (truncated)")
+    # Relay to all other clients
     emit('msg', data, broadcast=True, include_self=False)
 
 if __name__ == '__main__':
-    # Run the server on port 5000, accessible from any network interface
-    socketio.run(app, host='0.0.0.0', port=5000)  # debug=True can help during development
+    # Start the Socket.IO server on port 5000
+    socketio.run(app, host='0.0.0.0', port=5000)
