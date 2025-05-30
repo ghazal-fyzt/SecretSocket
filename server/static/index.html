@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SecretSocket Chat</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/libsodium-wrappers/dist/libsodium-wrappers.js"></script>
+  <style>
+    /* your existing CSS from ui.html */
+  </style>
+</head>
+<body>
+  <div id="chat-container">
+    <div id="messages"></div>
+    <div id="input-area">
+      <input id="msg-input" placeholder="Type a message…" />
+      <button id="send-btn">Send</button>
+    </div>
+  </div>
+
+  <script>
+  (async() => {
+    await sodium.ready;
+    const socket = io();
+
+    // 1) Generate an X25519 keypair for this browser
+    const keyPair = sodium.crypto_kx_keypair();
+
+    // 2) Helper to send our public key
+    function sendHandshake(){
+      socket.emit('handshake', {
+        public_key: Buffer.from(keyPair.publicKey).toString('hex')
+      });
+    }
+
+    // 3) On connect, send handshake immediately & after 1s
+    socket.on('connect', () => {
+      sendHandshake();
+      setTimeout(sendHandshake, 1000);
+    });
+
+    let sessionKey = null;
+
+    // 4) When we get a peer's public key:
+    socket.on('handshake', ({ public_key }) => {
+      const peerPub  = Buffer.from(public_key, 'hex');
+      // Derive 2 session keys: transmit and receive
+      // We'll pick the transmit key for encryption
+      const keys = sodium.crypto_kx_client_session_keys(
+        keyPair.publicKey, keyPair.privateKey,
+        peerPub
+      );
+      sessionKey = keys.sharedTx; // 32-byte Uint8Array
+      appendSystem('🔒 Secure channel established');
+    });
+
+    // 5) On pressing Send:
+    document.getElementById('send-btn').onclick = () => {
+      if (!sessionKey) {
+        alert('Wait for secure channel');
+        return;
+      }
+      const text = document.getElementById('msg-input').value;
+      const pt   = new TextEncoder().encode(text);
+      const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
+      const ct    = sodium.crypto_secretbox_easy(pt, nonce, sessionKey);
+      // send both nonce + ct encoded as hex
+      socket.emit('msg', {
+        body: Buffer.concat([nonce, ct]).toString('hex')
+      });
+      appendMessage(text, 'self');
+      document.getElementById('msg-input').value = '';
+    };
+
+    // 6) When we get an encrypted message:
+    socket.on('msg', ({ body }) => {
+      if (!sessionKey) return;
+      const bin = Buffer.from(body, 'hex');
+      const nonce = bin.slice(0, sodium.crypto_secretbox_NONCEBYTES);
+      const ct    = bin.slice(sodium.crypto_secretbox_NONCEBYTES);
+      const pt    = sodium.crypto_secretbox_open_easy(ct, nonce, sessionKey);
+      appendMessage(new TextDecoder().decode(pt), 'other');
+    });
+
+    function appendMessage(text, who){
+      const div = document.createElement('div');
+      div.className = `message ${who}`;
+      div.textContent = text;
+      document.getElementById('messages').append(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+    function appendSystem(text){
+      const div = document.createElement('div');
+      div.className = 'system';
+      div.textContent = text;
+      document.getElementById('messages').append(div);
+    }
+  })();
+  </script>
+</body>
+</html>
