@@ -3,6 +3,7 @@ Flask-SocketIO server for SecretSocket.
 Relays handshake and chat messages between connected clients.
 Does NOT decrypt or inspect message contents—acts as an honest-but-curious relay.
 """
+print(">>> Starting SecretSocket server…")  # just because:)
 
 from flask import Flask, request
 from flask_socketio import SocketIO, emit

@@ -1,9 +1,9 @@
 """
 Interactive WebSocket client for SecretSocket with:
-- Ephemeral key handshake
+- Ephemeral key handshake (re-sent for late joiners)
 - Message encryption/decryption
 - Perfect Forward Secrecy via key rotation
-- User input loop for sending messages
+- User input loop
 """
 
 import sys
@@ -21,19 +21,16 @@ from client.crypto import (
 ROTATION_THRESHOLD = 20
 
 class SecretSocketClient:
-    def __init__(self, server_url, peer_static_pub_hex=None):
-        self.sio = socketio.Client()
+    def __init__(self, server_url):
+        """
+        Initialize client, register Socket.IO handlers.
+        """
         self.server_url = server_url
+        self.sio = socketio.Client()
         self.eph_priv = None
         self.eph_pub = None
         self.session_key = None
         self.msg_count = 0
-
-        # (Optional) static peer key
-        self.peer_static_pub = (
-            PublicKey(bytes.fromhex(peer_static_pub_hex))
-            if peer_static_pub_hex else None
-        )
 
         # Register event handlers
         self.sio.on('connect', self.on_connect)
@@ -41,39 +38,56 @@ class SecretSocketClient:
         self.sio.on('msg', self.on_message)
 
     def start(self):
-        """Connect to server and begin user input loop."""
-        # Connect to the Socket.IO server
+        """
+        Connect to server and start input loop.
+        """
         self.sio.connect(self.server_url)
-        # Start a background thread to read user input
         threading.Thread(target=self._input_loop, daemon=True).start()
-        # Keep main thread alive
         threading.Event().wait()
 
     def _input_loop(self):
-        """Continuously read from stdin and send user messages."""
+        """
+        Read console input and send messages.
+        """
         while True:
             try:
                 text = input()
             except EOFError:
                 break
-            if not text.strip():
-                continue
-            self.send_chat(text.strip())
+            if text.strip():
+                self.send_chat(text.strip())
 
     def on_connect(self):
-        """Generate ephemeral keys and initiate handshake on connect."""
+        """
+        On connect: generate ephemeral keypair and send handshake twice.
+        The second send (after delay) ensures late-joining peers receive it.
+        """
         self.eph_priv, self.eph_pub = generate_ephemeral_keypair()
-        self.sio.emit('handshake', {'public_key': self.eph_pub.encode().hex()})
+        self._send_handshake()
+
+    def _send_handshake(self):
+        """
+        Emit handshake now and a second time after 1 second for late joiners.
+        """
+        data = {'public_key': self.eph_pub.encode().hex()}
+        # immediate send
+        self.sio.emit('handshake', data)
+        # resend after delay so new clients also derive the key
+        threading.Timer(1.0, lambda: self.sio.emit('handshake', data)).start()
 
     def on_handshake(self, data):
-        """Receive peer's public key, derive session key, reset counter."""
+        """
+        Handle incoming handshake: derive session key.
+        """
         peer_pub = PublicKey(bytes.fromhex(data['public_key']))
         self.session_key = derive_session_key(self.eph_priv, peer_pub)
         print('[*] Session established. You can start chatting.')
         self.msg_count = 0
 
     def send_chat(self, text):
-        """Encrypt and emit a chat message."""
+        """
+        Encrypt and send a chat message.
+        """
         if not self.session_key:
             print('[-] No session key yet. Please wait for handshake.')
             return
@@ -82,7 +96,9 @@ class SecretSocketClient:
         self._after_message()
 
     def on_message(self, data):
-        """Receive and decrypt incoming chat messages."""
+        """
+        Decrypt and display incoming messages.
+        """
         if not self.session_key:
             return
         ciphertext = bytes.fromhex(data['body'])
@@ -91,23 +107,25 @@ class SecretSocketClient:
         self._after_message()
 
     def _after_message(self):
-        """Increment counter and rotate keys if threshold reached."""
+        """
+        Increment message counter and rotate keys if threshold reached.
+        """
         self.msg_count += 1
         if self.msg_count >= ROTATION_THRESHOLD:
             print('[*] Rotating keys for PFS...')
             self.rotate_keys()
 
     def rotate_keys(self):
-        """Wipe old key, generate new ephemeral pair, and handshake again."""
+        """
+        Clear old key, generate new ephemeral pair, and handshake again.
+        """
         self.session_key = None
         self.eph_priv, self.eph_pub = generate_ephemeral_keypair()
-        self.sio.emit('handshake', {'public_key': self.eph_pub.encode().hex()})
+        self._send_handshake()
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print('Usage: python client/app.py <server_url> [peer_static_pub_hex]')
+        print('Usage: python -m client.app <server_url>')
         sys.exit(1)
-    server = sys.argv[1]
-    peer_hex = sys.argv[2] if len(sys.argv) >= 3 else None
-    client = SecretSocketClient(server, peer_hex)
+    client = SecretSocketClient(sys.argv[1])
     client.start()
