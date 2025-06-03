@@ -1,7 +1,7 @@
 SecretSocket
 An end-to-end-encrypted WebSocket chat with perfect-forward-secrecy (PFS).
 
-
+```plain text
 SecretSocket/
 ├─ client/                # Browser UI (HTML/JS) or CLI
 ├─ server/
@@ -16,7 +16,7 @@ SecretSocket/
 ├─ Dockerfile
 ├─ docker-compose.yml
 └─ README.md
-
+```
 simply expalain
 **SecretSocket** is a hands-on demo of how modern end-to-end encryption works in a live chat app. At its heart, you’ll build:
 
